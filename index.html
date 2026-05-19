@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>📖 Álbum Mundial 2026 — Sync con amigos</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
 <style>
   :root, body.theme-retro {
     --bg-page: #c19a6b; --bg-gradient: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);
@@ -162,8 +164,11 @@
   .side.give .side-label { background: var(--have-bg); color: var(--have-border); }
   .side.need .side-label { background: var(--dup-bg); color: var(--accent); }
   .side-empty { color: var(--text-secondary); font-style: italic; }
-  .name-chip { display: inline-block; background: var(--bg-card-soft); padding: 0.08rem 0.4rem; border-radius: 4px; margin: 0.05rem 0.1rem 0.05rem 0; font-size: 0.68rem; font-weight: 700; }
+  .name-chip { display: inline-flex; align-items: center; gap: 0.25rem; background: var(--bg-card-soft); padding: 0.1rem 0.45rem 0.1rem 0.18rem; border-radius: 10px; margin: 0.1rem 0.15rem 0.1rem 0; font-size: 0.68rem; font-weight: 700; vertical-align: middle; }
   .name-chip.me { background: var(--accent); color: var(--text-on-accent); }
+  .chip-avatar { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-2); color: var(--text-on-accent); font-size: 0.55rem; font-weight: 800; overflow: hidden; flex-shrink: 0; }
+  .chip-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  .name-chip.me .chip-avatar { background: var(--bg-card); color: var(--accent); }
 
   .trade-card { background: var(--bg-card); border-radius: 10px; padding: 0.6rem; margin-bottom: 0.4rem; border-left: 4px solid var(--accent-2); display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; }
   .trade-card.give { border-left-color: var(--have-border); }
@@ -201,6 +206,56 @@
   .theme-option-desc { font-size: 0.68rem; color: var(--text-secondary); margin-top: 0.1rem; }
 
   body.theme-neon .header-title, body.theme-neon .page-title, body.theme-neon .panel-title { text-shadow: 0 0 4px currentColor, 0 0 8px currentColor; }
+
+  /* ===== Avatar con foto ===== */
+  .user-avatar, .home-avatar {
+    overflow: hidden;
+    position: relative;
+  }
+  .user-avatar img, .home-avatar img, .home-top-rank img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+  }
+  .home-avatar { cursor: pointer; position: relative; }
+  .home-avatar::after {
+    content: "+"; position: absolute; bottom: -2px; right: -2px;
+    width: 24px; height: 24px; background: var(--have-border); color: white;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; font-weight: 800; line-height: 1;
+    border: 2.5px solid var(--bg-surface);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .home-avatar::before {
+    content: "Tocá para foto"; position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.75); color: white; padding: 2px 8px; border-radius: 6px;
+    font-size: 0.6rem; font-weight: 700; white-space: nowrap; opacity: 0;
+    transition: opacity 0.2s; pointer-events: none; font-family: var(--font);
+  }
+  .home-avatar:hover::before { opacity: 1; }
+  .home-top-rank { overflow: hidden; }
+  .home-top-rank img { width: 22px; height: 22px; }
+
+  /* ===== Photo upload modal ===== */
+  .photo-modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    z-index: 300; align-items: center; justify-content: center; padding: 1rem;
+  }
+  .photo-modal.open { display: flex; flex-direction: column; }
+  .photo-modal h3 { color: white; margin: 0 0 0.8rem 0; font-family: var(--font-display); font-size: 1.05rem; }
+  .photo-crop-container {
+    width: 100%; max-width: 420px; height: 60vh; max-height: 420px;
+    background: #000; border-radius: 12px; overflow: hidden;
+  }
+  .photo-crop-container img { max-width: 100%; display: block; }
+  .photo-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.8rem; width: 100%; max-width: 420px; }
+  .photo-actions button {
+    padding: 0.75rem; border-radius: 10px; font-weight: 700; cursor: pointer;
+    border: none; font-size: 0.9rem; font-family: inherit;
+  }
+  .photo-cancel { background: var(--bg-card-soft); color: var(--text-primary); }
+  .photo-confirm { background: var(--accent); color: var(--text-on-accent); }
+  .photo-loading { color: white; margin-top: 0.8rem; font-size: 0.85rem; display: none; }
+  .photo-loading.show { display: block; }
+  #photoFile { display: none; }
 
   /* ===== Dashboard / Home ===== */
   .home-hero {
@@ -547,6 +602,20 @@
   </div>
 </div>
 
+<!-- ===== Photo upload + crop ===== -->
+<input type="file" id="photoFile" accept="image/*">
+<div class="photo-modal" id="photoModal">
+  <h3>📸 Recortá tu foto de perfil</h3>
+  <div class="photo-crop-container">
+    <img id="photoToCrop" alt="">
+  </div>
+  <div class="photo-loading" id="photoLoading">⏳ Subiendo...</div>
+  <div class="photo-actions">
+    <button class="photo-cancel" onclick="cancelPhoto()">Cancelar</button>
+    <button class="photo-confirm" onclick="confirmPhoto()">Guardar</button>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = "https://ehsbdguzjzxbstfghgxe.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoc2JkZ3V6anp4YnN0ZmdoZ3hlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDkwNzYsImV4cCI6MjA5NDc4NTA3Nn0.MEn39fqP7-Qvg6a5WnB1-FbNFFn1gIYtT2ErPhOU-4w";
@@ -575,11 +644,13 @@ const THEMES = [
 
 let currentUser = null;
 let stickerData = {}; // { username: { sticker_id: qty } }
+let userAvatars = {}; // { username: dataUrl }
 let allUsers = [];
 let currentPage = parseInt(localStorage.getItem(PAGE_KEY) || "0", 10);
 let currentTheme = localStorage.getItem(THEME_KEY) || "retro";
 let tradeMode = "global";
 let realtimeChannel = null;
+let cropperInstance = null;
 
 // ===== Theme =====
 function applyTheme(id) {
@@ -686,11 +757,12 @@ async function onAuthSuccess(username) {
   currentUser = username;
   localStorage.setItem(SESSION_KEY, username);
   document.getElementById("loginOverlay").classList.add("hidden");
-  document.getElementById("userAvatar").textContent = username[0].toUpperCase();
   document.getElementById("userName").firstChild.textContent = username;
-  document.getElementById("homeAvatar").textContent = username[0].toUpperCase();
   document.getElementById("homeName").textContent = username;
   await loadAllData();
+  // Setear avatares ahora que se cargo userAvatars
+  setAvatarElement(document.getElementById("userAvatar"), username);
+  setAvatarElement(document.getElementById("homeAvatar"), username);
   subscribeRealtime();
   renderHome();
   setLoginLoading(false);
@@ -764,9 +836,19 @@ function renderHome() {
 
     ranked.forEach((r, i) => {
       const rankCls = i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : "";
+      // Avatar mini + posicion
+      const rankDiv = el("div", {class: "home-top-rank " + rankCls, style: "width:28px;height:28px;padding:0;"});
+      if (userAvatars[r.u]) {
+        const img = document.createElement("img");
+        img.src = userAvatars[r.u]; img.alt = r.u;
+        img.style.cssText = "width:100%;height:100%;border-radius:50%;object-fit:cover;";
+        rankDiv.appendChild(img);
+      } else {
+        rankDiv.textContent = String(i + 1);
+      }
       topList.appendChild(el("div", {class: "home-top-row"},
-        el("div", {class: "home-top-rank " + rankCls}, String(i + 1)),
-        el("div", {class: "home-top-name" + (r.u === currentUser ? " me" : "")}, r.u + (r.u === currentUser ? " (vos)" : "")),
+        rankDiv,
+        el("div", {class: "home-top-name" + (r.u === currentUser ? " me" : "")}, "#" + (i+1) + " " + r.u + (r.u === currentUser ? " (vos)" : "")),
         el("div", {class: "home-top-pct"}, r.pct.toFixed(0) + "%")
       ));
     });
@@ -789,8 +871,10 @@ function logout() {
 async function loadAllData() {
   setSyncStatus("Cargando datos...", false);
   try {
-    const { data: users } = await sb.from("users").select("username").order("created_at");
+    const { data: users } = await sb.from("users").select("username, avatar").order("created_at");
     allUsers = (users || []).map(u => u.username);
+    userAvatars = {};
+    (users || []).forEach(u => { if (u.avatar) userAvatars[u.username] = u.avatar; });
     const { data: stickers } = await sb.from("stickers").select("username, sticker_id, qty");
     stickerData = {};
     allUsers.forEach(u => stickerData[u] = {});
@@ -840,11 +924,24 @@ function subscribeRealtime() {
       else if (activePanel.id === "panel-trade") (tradeMode === "global" ? renderGlobalTrade : renderTrade)();
       else if (activePanel.id === "panel-resumen") renderResumen();
     })
-    .on("postgres_changes", {event: "INSERT", schema: "public", table: "users"}, payload => {
-      if (!allUsers.includes(payload.new.username)) {
-        allUsers.push(payload.new.username);
-        stickerData[payload.new.username] = {};
+    .on("postgres_changes", {event: "*", schema: "public", table: "users"}, payload => {
+      const row = payload.new || payload.old;
+      if (!row) return;
+      if (payload.eventType === "INSERT" && !allUsers.includes(row.username)) {
+        allUsers.push(row.username);
+        stickerData[row.username] = {};
         rebuildUserSelects();
+      }
+      // Sync avatar updates (cuando un amigo sube foto)
+      if (payload.new && payload.new.avatar !== undefined) {
+        if (payload.new.avatar) userAvatars[payload.new.username] = payload.new.avatar;
+        else delete userAvatars[payload.new.username];
+        // Re-render donde se vea
+        const activePanel = document.querySelector(".panel.active");
+        if (activePanel.id === "panel-home") renderHome();
+        if (payload.new.username === currentUser) {
+          setAvatarElement(document.getElementById("userAvatar"), currentUser);
+        }
       }
     })
     .subscribe();
@@ -876,6 +973,92 @@ async function setQty(stickerId, qty) {
 }
 
 function getQty(user, id) { return (stickerData[user] && stickerData[user][id]) || 0; }
+
+// ===== Helper: chip con mini-avatar =====
+function makeChip(username, isMe) {
+  const chip = document.createElement("span");
+  chip.className = "name-chip" + (isMe ? " me" : "");
+  const av = document.createElement("span");
+  av.className = "chip-avatar";
+  const avatar = userAvatars[username];
+  if (avatar && typeof avatar === "string" && avatar.startsWith("data:image/")) {
+    const img = document.createElement("img");
+    img.src = avatar; img.alt = username;
+    av.appendChild(img);
+  } else {
+    av.textContent = username[0].toUpperCase();
+  }
+  chip.appendChild(av);
+  chip.appendChild(document.createTextNode(username));
+  return chip;
+}
+
+// ===== Avatares =====
+function setAvatarElement(el, username, size) {
+  el.innerHTML = "";
+  const avatar = userAvatars[username];
+  // Validar que sea una data URL de imagen para evitar XSS
+  if (avatar && typeof avatar === "string" && avatar.startsWith("data:image/")) {
+    const img = document.createElement("img");
+    img.src = avatar; img.alt = username; img.loading = "lazy";
+    if (size) { img.style.width = size + "px"; img.style.height = size + "px"; }
+    el.appendChild(img);
+  } else {
+    const span = document.createElement("span");
+    span.textContent = username[0].toUpperCase();
+    el.appendChild(span);
+  }
+}
+
+// ===== Photo upload flow =====
+function openPhotoPicker() { document.getElementById("photoFile").click(); }
+function onPhotoSelected(e) {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  if (!f.type.startsWith("image/")) { alert("Tiene que ser una imagen (jpg, png, webp)"); return; }
+  if (f.size > 8 * 1024 * 1024) { alert("La imagen es muy grande, máximo 8MB"); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = document.getElementById("photoToCrop");
+    img.src = ev.target.result;
+    document.getElementById("photoModal").classList.add("open");
+    if (cropperInstance) cropperInstance.destroy();
+    cropperInstance = new Cropper(img, {
+      aspectRatio: 1, viewMode: 1, dragMode: "move",
+      autoCropArea: 0.9, background: false, guides: false,
+      cropBoxResizable: true, cropBoxMovable: true,
+      toggleDragModeOnDblclick: false,
+    });
+  };
+  reader.readAsDataURL(f);
+  e.target.value = ""; // reset input para que pueda subir la misma foto otra vez
+}
+function cancelPhoto() {
+  document.getElementById("photoModal").classList.remove("open");
+  if (cropperInstance) { cropperInstance.destroy(); cropperInstance = null; }
+}
+async function confirmPhoto() {
+  if (!cropperInstance || !currentUser) return;
+  document.getElementById("photoLoading").classList.add("show");
+  try {
+    const canvas = cropperInstance.getCroppedCanvas({
+      width: 220, height: 220,
+      imageSmoothingEnabled: true, imageSmoothingQuality: "high"
+    });
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    // Guardar en Supabase
+    const { error } = await sb.from("users").update({ avatar: dataUrl }).eq("username", currentUser);
+    if (error) throw error;
+    userAvatars[currentUser] = dataUrl;
+    cancelPhoto();
+    renderHome();
+    // Actualizar user-bar
+    setAvatarElement(document.getElementById("userAvatar"), currentUser);
+  } catch (e) {
+    alert("Error subiendo la foto: " + (e.message || e));
+  }
+  document.getElementById("photoLoading").classList.remove("show");
+}
 
 // ===== Render Página de Álbum =====
 function renderPage() {
@@ -998,8 +1181,8 @@ function renderGlobalTrade() {
 
   filtered.slice(0, 250).forEach(({s, givers, needers, status}) => {
     const pillText = status === "match" ? "✅ Match" : status === "givers" ? "⚪ Sólo dadores" : status === "needers" ? "⚪ Sólo necesitan" : "—";
-    const giversChips = givers.length > 0 ? givers.map(u => el("span", {class: "name-chip" + (u === currentUser ? " me" : "")}, u)) : [el("span", {class: "side-empty"}, "nadie")];
-    const needersChips = needers.length > 0 ? needers.map(u => el("span", {class: "name-chip" + (u === currentUser ? " me" : "")}, u)) : [el("span", {class: "side-empty"}, "nadie")];
+    const giversChips = givers.length > 0 ? givers.map(u => makeChip(u, u === currentUser)) : [el("span", {class: "side-empty"}, "nadie")];
+    const needersChips = needers.length > 0 ? needers.map(u => makeChip(u, u === currentUser)) : [el("span", {class: "side-empty"}, "nadie")];
     list.appendChild(el("div", {class: "global-row " + status},
       el("div", {class: "global-head"},
         el("span", {class: "global-flag"}, s.flag || "🏆"),
@@ -1061,8 +1244,24 @@ function renderResumen() {
     const data = stickerData[u] || {}; let have = 0, dupCount = 0;
     CATALOG.forEach(s => { const q = data[s.id] || 0; if (q >= 1) have++; if (q >= 2) dupCount += (q - 1); });
     const pct = (have / total) * 100;
+
+    // Celda de nombre con mini-avatar
+    const avatarMini = el("div", {style: "width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--text-on-accent);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.7rem;overflow:hidden;flex-shrink:0;"});
+    if (userAvatars[u]) {
+      const img = document.createElement("img");
+      img.src = userAvatars[u]; img.alt = u;
+      img.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:50%;";
+      avatarMini.appendChild(img);
+    } else {
+      avatarMini.textContent = u[0].toUpperCase();
+    }
+    const nameCell = el("div", {style: "display:flex;align-items:center;gap:0.4rem;"},
+      avatarMini,
+      el("strong", {}, u + (u === currentUser ? " (vos)" : ""))
+    );
+
     tbody.appendChild(el("tr", {},
-      el("td", {}, el("strong", {}, u + (u === currentUser ? " (vos)" : ""))),
+      el("td", {}, nameCell),
       el("td", {}, have), el("td", {}, dupCount), el("td", {}, total - have),
       el("td", {}, el("div", {class: "progress-table"}, el("div", {class: "progress-table-bar", style: "width:" + pct.toFixed(1) + "%"}, pct.toFixed(1) + "%")))
     ));
@@ -1120,6 +1319,10 @@ document.getElementById("albumPage").addEventListener("touchend", e => {
 document.getElementById("btnLogin").addEventListener("click", doLogin);
 document.getElementById("btnRegister").addEventListener("click", doRegister);
 document.getElementById("loginPin").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+
+// Photo upload listeners
+document.getElementById("homeAvatar").addEventListener("click", openPhotoPicker);
+document.getElementById("photoFile").addEventListener("change", onPhotoSelected);
 
 // ===== Auto-login si hay session =====
 applyTheme(currentTheme);
